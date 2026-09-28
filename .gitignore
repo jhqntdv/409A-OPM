@@ -1,0 +1,35 @@
+# Virtual environments & Python cache
+.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Testing & Linting cache
+test_*.py
+validate_*.py
+tests/
+test/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
+
+# Generated reports & outputs
+*.html
+capital_structure_report.html
+
+# Package manager lockfiles & python environment
+uv.lock
+pyproject.toml
+.python-version
+
+# OS & Editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
