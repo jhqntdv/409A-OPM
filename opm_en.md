@@ -36,26 +36,44 @@ The hierarchical relationship of the 50-class capital structure implemented in `
 ```
 Total Enterprise / Equity Value (TEV, S0)
 ├── Class 01: Common Stock
-│   ├── Share Weight: 10% - 100% (scenario-dependent, default 50% / 10.5 shares)
+│   ├── Share Weight: 10% - 100% (scenario-dependent, default 50% / 10.0 shares)
 │   ├── Strike Price: K = 0.0 (no exercise threshold)
 │   └── Vesting Condition: 100% fully vested (vest_pct = 1.0)
 │
-├── Class 02 - 10: Stock Options (Employee Stock Options / Vanilla Options)
-│   ├── Number of Classes: 9 classes (0.50 shares each, 4.5 shares total)
-│   ├── Strike Range: K in [10.0, 41.67]
+├── Class 02 - 08: Stock Options (Employee Stock Options / Vanilla Options)
+│   ├── Number of Classes: 7 classes (0.50 shares each, 3.5 shares total)
+│   ├── Strike Range: K in [10.0, 40.0]
 │   └── Vesting Condition: 100% fully vested (no price hurdle, thres = 0.0)
 │
-├── Class 11 - 30: Warrants (Threshold Warrants)
-│   ├── Number of Classes: 20 classes (0.20 shares each, 4.0 shares total)
-│   ├── Strike Range: K in [45.62, 123.96]
-│   ├── Hurdle Condition: thres = 1.10 * K (underlying asset must exceed 110% of K)
+├── Class 09 - 10: Early Vest Options
+│   ├── Number of Classes: 2 classes (0.50 shares each, 1.0 shares total)
+│   ├── Strike Range: K in [45.0, 50.0]
+│   ├── Hurdle Condition: thres = max(K - 20.0, 0.1)
+│   └── Vesting Percentage: 50% vested once hurdle is met (vest_pct = 0.50)
+│
+├── Class 11 - 20: Warrants (Threshold Warrants)
+│   ├── Number of Classes: 10 classes (0.20 shares each, 2.0 shares total)
+│   ├── Strike Range: K in [55.0, 100.0]
+│   ├── Hurdle Condition: thres = K + 50.0
 │   └── Vesting Percentage: 85% vested once hurdle is met (vest_pct = 0.85)
+│
+├── Class 21 - 25: Mimic Linear Options
+│   ├── Number of Classes: 5 classes (0.15 shares each, 0.75 shares total)
+│   ├── Strike Range: K in [105.0, 125.0]
+│   ├── Hurdle Range: thres = [K + 10.0 .. K + 110.0] (100-step linear approximation)
+│   └── Vesting Percentage: Linear step vesting (0.01 to 1.0)
+│
+├── Class 26 - 30: True Linear Options
+│   ├── Number of Classes: 5 classes (0.15 shares each, 0.75 shares total)
+│   ├── Strike Range: K in [130.0, 150.0]
+│   ├── Hurdle Range: thres = [K + 10.0 -> K + 110.0] (continuous linear)
+│   └── Vesting Percentage: Continuous linear vesting (0.0 to 1.0)
 │
 └── Class 31 - 50: Incentive Units (Management Incentive Units)
     ├── Number of Classes: 20 classes (0.10 shares each, 2.0 shares total)
-    ├── Strike Range: K in [127.92, 200.0]
-    ├── Two-Tier Hurdles: thres = [1.05 * K, 1.20 * K]
-    └── Step Vesting: 50% vests above 105% K; 100% vests above 120% K
+    ├── Strike Range: K in [155.0, 250.0]
+    ├── Two-Tier Hurdles: thres = [K + 30.0, K + 150.0]
+    └── Step Vesting: 50% vests above K + 30; 100% vests above K + 150
 ```
 
 ### 1.2 CCA (OPM) for Private Company Practice
@@ -149,19 +167,19 @@ where $v(S_T)$ is a **vesting function** that determines the effective vesting p
 ```python
 from black_scholes import call_option
 
-# Type 1: Plain Vanilla Stock Option (Class 02-10)
+# Type 1: Plain Vanilla Stock Option (Class 02-08)
 # No threshold barrier; fully vested upon exercise
 vanilla = call_option(K=50.0, thres=0.0, vest_pct=1.0, is_step=1)
 
-# Type 2: Warrants (Class 11-30)
-# Asset price must breach hurdle (thres = K * 1.10) to vest 85%
-warrants = call_option(K=100.0, thres=110.0, vest_pct=0.85, is_step=1)
-#   payoff(S_T) = max(S_T - 100, 0) * (0.85 if S_T > 110 else 0)
+# Type 2: Warrants (Class 11-20)
+# Asset price must breach hurdle (thres = K + 50) to vest 85%
+warrants = call_option(K=100.0, thres=150.0, vest_pct=0.85, is_step=1)
+#   payoff(S_T) = max(S_T - 100, 0) * (0.85 if S_T > 150 else 0)
 
 # Type 3: Incentive Units (Class 31-50)
-# Two-tier step vesting: vests 50% above thres[0]=105, 100% above thres[1]=120
-incentive = call_option(K=100.0, thres=[105.0, 120.0], vest_pct=[0.50, 1.00], is_step=1)
-#   payoff(S_T) = max(S_T - 100, 0) * {0.0 if S_T<105 | 0.5 if 105<=S_T<120 | 1.0 if S_T>=120}
+# Two-tier step vesting: vests 50% above thres[0]=K+30, 100% above thres[1]=K+150
+incentive = call_option(K=100.0, thres=[130.0, 250.0], vest_pct=[0.50, 1.00], is_step=1)
+#   payoff(S_T) = max(S_T - 100, 0) * {0.0 if S_T<130 | 0.5 if 130<=S_T<250 | 1.0 if S_T>=250}
 ```
 
 Due to the **step discontinuities** in the payoff functions, conventional finite differencing fails to provide stable derivatives. The trapezoidal rule only evaluates pointwise values of the discontinuous payoff $f(S_T)$ and **requires zero differentiation of the payoff function**, making it inherently ideal for such exotic structures.
@@ -219,13 +237,16 @@ d[k] = disc * trapezoid(fn(grid) * w_delta, grid)   # Requires only 1 integratio
 ```
 opm/
 ├── black_scholes.py     # Core engine
-│   ├── call_option()             - Unified exotic option payoff factory
-│   ├── make_mutual_grid()        - Constructs shared PDF grid
-│   ├── make_delta_weight()       - LRM Delta integration kernel
-│   ├── bs_price_and_delta_multiple() - Public API: simultaneous FV and Delta calculation
-│   ├── equity_moments()          - Calculates TEV0, voleq, skewness, kurtosis
-│   ├── calibrate_cca()           - Nelder-Mead joint calibration of S0 & sigma
-│   └── run_opm_analysis()        - Comprehensive text report generation
+│   ├── call_option()                  - Unified exotic option payoff factory
+│   ├── make_mutual_grid()             - Constructs shared log-normal PDF grid
+│   ├── make_delta_weight()            - LRM Delta integration kernel (w_delta)
+│   ├── bs_price_and_delta_multiple()  - Public API: simultaneous FV and Delta calculation
+│   ├── equity_moments()              - Calculates TEV0 and implied equity volatility
+│   ├── calibrate_cca()               - Nelder-Mead joint calibration of S0 & sigma
+│   ├── MarketParams                  - Dataclass: market inputs and grid settings
+│   ├── CalibrationTargets            - Dataclass: target TEV and equity volatility
+│   ├── calc_portfolio_allocations()  - Omega, Elasticity, and Specific Vol per class
+│   └── run_opm_analysis()            - Comprehensive text report generation
 │
 ├── portfolio.py         # Capital structure definitions
 │   └── build_capital_structure() - Builds the 50-class equity compensation portfolio
@@ -244,13 +265,15 @@ Under the Contingent Claim Analysis (CCA) framework, the unobserved underlying p
 
 $$\mathcal{L}(S_0, \sigma_A) = \underbrace{\left(\frac{\text{TEV}(S_0, \sigma_A) - \text{TEV}_0^{\text{target}}}{\text{TEV}_0^{\text{target}}}\right)^2}_{\text{Market Value Error}} + \underbrace{\left(\frac{\sigma_{eq}(S_0, \sigma_A) - \sigma_{eq}^{\text{target}}}{\sigma_{eq}^{\text{target}}}\right)^2}_{\text{Volatility Error}}$$
 
-where $\sigma_{eq}$ uses the rigorous definition of **integrated volatility** (consistent with Monte Carlo path simulation):
+where $\sigma_{eq}$ is computed via the **Merton leverage-elasticity formula**, using the portfolio-level Delta from numerical integration:
 
-$$\sigma_{eq} = \frac{\text{std}\left(\ln(\text{TEV}_T / \text{TEV}_0)\right)}{\sqrt{T}} = \frac{\sqrt{\int \left(\ln\frac{f_{\text{total}}(S_T)}{\text{TEV}_0} - \mu_{\ln}\right)^2 p(S_T)\,dS_T}}{\sqrt{T}}$$
+$$\sigma_{eq}(S_0, \sigma_A) = \sigma_A \cdot \frac{S_0 \cdot \Delta_{\text{total}}}{\text{TEV}_0}$$
 
-To accelerate Nelder-Mead convergence (from 80+ iterations to ~30 iterations), the solver employs a dynamic, leverage-aware initial guess strategy:
+where $\Delta_{\text{total}} = \sum_i N_i \Delta_i$ is the aggregate portfolio Delta computed on the shared mutual grid. This is numerically exact for any payoff structure and directly consistent with the Itô-chain-rule derivation of equity volatility.
+
+To accelerate Nelder-Mead convergence, the solver uses a gross-up initial guess for $S_0$; $\sigma_A$ is initialized directly to the target equity volatility:
 - $S_0^{\text{guess}} = \frac{\text{TEV}_0 + \text{Total Proceeds}}{\text{Total Shares}}$ (Gross-up proxy)
-- $\sigma_A^{\text{guess}} = \sigma_{eq}^{\text{target}} \times \sqrt{\frac{\text{Common Shares}}{\text{Total Shares}}}$ (Accounting for leverage-induced volatility expansion)
+- $\sigma_A^{\text{guess}} = \sigma_{eq}^{\text{target}}$ (Direct initialization; leverage adjustment is left to the optimizer)
 
 ### 5.2 Class-Specific Volatility Allocation (Option B)
 
@@ -262,40 +285,63 @@ $$\sigma_{i,\text{alloc}} = \sigma_{eq}^{\text{target}} \times \frac{\text{TEV}_
 
 $$\sum_i \frac{N_i V_i}{\text{TEV}_0} \cdot \sigma_{i,\text{alloc}} = \sigma_{eq}^{\text{target}} \cdot \frac{\sum_i N_i \Delta_i}{\Delta_{\text{total}}} = \sigma_{eq}^{\text{target}} \cdot 1 = \sigma_{eq}^{\text{target}}$$
 
----
-
 ## 6. Complete Execution Example
 
-The following is a complete end-to-end pricing and calibration example with 3 share classes:
+The following is a complete end-to-end pricing and calibration example with **10 share classes**, using the same market inputs as `generate_report.py` (50/50 Scenario 4). Classes 2–8 are vanilla Stock Options; Classes 9–10 are Early Vest Options with a vesting threshold.
 
 ```python
-from black_scholes import (
-    call_option, MarketParams, CalibrationTargets, run_opm_analysis
-)
+from black_scholes import call_option, MarketParams, CalibrationTargets, run_opm_analysis
 
-# --- 1. Define Capital Structure (3 Share Classes) ---
+# --- 1. Define Capital Structure (10 Share Classes, 50/50 Common/Other) ---
 portfolio = {
     "Class 01 Common Stock": {
         "params": {"K": 0.0, "thres": 0.0, "vest_pct": 1.0, "is_step": 1},
-        "th_str": "-", "shares": 5.0,
-        "fn": call_option(K=0.0),                         # Common stock: no strike price
+        "th_str": "-", "shares": 10.0, "fn": call_option(K=0.0),
     },
     "Class 02 Stock Option": {
-        "params": {"K": 50.0, "thres": 0.0, "vest_pct": 1.0, "is_step": 1},
-        "th_str": "-", "shares": 2.0,
-        "fn": call_option(K=50.0),                        # Vanilla option: strike 50
+        "params": {"K": 10.0, "thres": 0.0, "vest_pct": 1.0, "is_step": 1},
+        "th_str": "-", "shares": 1.1111, "fn": call_option(K=10.0),
     },
-    "Class 03 Incentive Unit": {
-        "params": {"K": 80.0, "thres": [84.0, 96.0], "vest_pct": [0.50, 1.00], "is_step": 1},
-        "th_str": "[84,96]", "shares": 1.0,
-        "fn": call_option(K=80.0, thres=[84.0, 96.0], vest_pct=[0.50, 1.00], is_step=1),
-        # Incentive unit: strike 80; vests 50% if asset > 84, 100% if asset > 96
+    "Class 03 Stock Option": {
+        "params": {"K": 15.0, "thres": 0.0, "vest_pct": 1.0, "is_step": 1},
+        "th_str": "-", "shares": 1.1111, "fn": call_option(K=15.0),
+    },
+    "Class 04 Stock Option": {
+        "params": {"K": 20.0, "thres": 0.0, "vest_pct": 1.0, "is_step": 1},
+        "th_str": "-", "shares": 1.1111, "fn": call_option(K=20.0),
+    },
+    "Class 05 Stock Option": {
+        "params": {"K": 25.0, "thres": 0.0, "vest_pct": 1.0, "is_step": 1},
+        "th_str": "-", "shares": 1.1111, "fn": call_option(K=25.0),
+    },
+    "Class 06 Stock Option": {
+        "params": {"K": 30.0, "thres": 0.0, "vest_pct": 1.0, "is_step": 1},
+        "th_str": "-", "shares": 1.1111, "fn": call_option(K=30.0),
+    },
+    "Class 07 Stock Option": {
+        "params": {"K": 35.0, "thres": 0.0, "vest_pct": 1.0, "is_step": 1},
+        "th_str": "-", "shares": 1.1111, "fn": call_option(K=35.0),
+    },
+    "Class 08 Stock Option": {
+        "params": {"K": 40.0, "thres": 0.0, "vest_pct": 1.0, "is_step": 1},
+        "th_str": "-", "shares": 1.1111, "fn": call_option(K=40.0),
+    },
+    "Class 09 Early Vest Option": {
+        # Vests 50% once asset price exceeds the threshold of 25
+        "params": {"K": 45.0, "thres": 25.0, "vest_pct": 0.5, "is_step": 1},
+        "th_str": "25", "shares": 1.1111, "fn": call_option(K=45.0, thres=25.0, vest_pct=0.5),
+    },
+    "Class 10 Early Vest Option": {
+        # Vests 50% once asset price exceeds the threshold of 30
+        "params": {"K": 50.0, "thres": 30.0, "vest_pct": 0.5, "is_step": 1},
+        "th_str": "30", "shares": 1.1111, "fn": call_option(K=50.0, thres=30.0, vest_pct=0.5),
     },
 }
 
 # --- 2. Set Market Parameters and Calibration Targets ---
-params  = MarketParams(T=2.0, r=0.05, q=0.0, N=20000)
-targets = CalibrationTargets(tev0=1000.0, voleq=0.55)   # Target equity value $1000, target volatility 55%
+# Inputs match generate_report.py Scenario 4 (50/50 structure)
+params  = MarketParams(S0=80, sigma=0.85, T=2.0, r=0.05, q=0.0, N=10000)
+targets = CalibrationTargets(tev0=850.0, voleq=0.80)  # Target equity $850, vol 80%
 
 # --- 3. Execute Calibration and Generate Report ---
 report = run_opm_analysis(portfolio, params, targets)
@@ -305,24 +351,32 @@ print(report)
 **Example Output:**
 
 ```
-===================================================================================================================================================
-Summary   : Total Equity = $1,000.00 | Equity Vol = 55.00% | Implied S0 = $131.2074 | T = 2.0y | r = 5.0%
-Dilution  : No Dilution: $200.00 | By OPM: $131.21 | By Vested Shares: $125.00 | By Outstanding Shares: $125.00
-Diagnosis : Converged in 43 iters (86.3 ms) | Batch Run Time = 3.10 ms
-===================================================================================================================================================
+===================================================================================================================================================================
+Summary   : Total Equity = $850.00 | Equity Vol = 80.00% | Implied S0 = $54.4445 | T = 2.0y | r = 5.0%
+Dilution  : No Dilution: $85.00 | By OPM: $54.44 | By Vested Shares: $46.03 | By Outstanding Shares: $42.50
+Diagnosis : Converged in 38 iters (38.1 ms) | Batch Run Time = 0.87 ms
+===================================================================================================================================================================
 Class                          Shares Shares (%) Strike K         Thres Vested Shares  Delta (dV/dS0)   Omega (Ω)  Elasticity Specific Vol %  FV (PS $)   Total ($)
----------------------------------------------------------------------------------------------------------------------------------------------------
-Class 01 Common Stock            5.00      62.50     0.00             -          5.00          1.0000      62.50%      1.0000          55.00     131.21      656.04
-Class 02 Stock Option            2.00      25.00    50.00             -          2.00          0.7231      25.00%      2.5123         138.18      37.75       75.50
-Class 03 Incentive Unit          1.00      12.50    80.00       [84,96]          0.67          0.4512      12.50%      3.8211         210.16      15.49       15.49
----------------------------------------------------------------------------------------------------------------------------------------------------
-TOTAL CAPITAL STRUCTURE          8.00     100.00                                 7.67                     100.00%                      55.00                 747.03
-===================================================================================================================================================
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Class 01 Common Stock           10.00      50.00     0.00             -         10.00          1.0000      55.74%      0.8702          69.62    54.4446      544.45
+Class 02 Stock Option            1.11       5.56    10.00             -          1.11          0.9897       6.13%      1.0268          82.15    45.6646       50.74
+Class 03 Stock Option            1.11       5.56    15.00             -          1.11          0.9715       6.02%      1.1024          88.19    41.7512       46.39
+Class 04 Stock Option            1.11       5.56    20.00             -          1.11          0.9464       5.86%      1.1727          93.82    38.2349       42.48
+Class 05 Stock Option            1.11       5.56    25.00             -          1.11          0.9169       5.68%      1.2378          99.03    35.0941       38.99
+Class 06 Stock Option            1.11       5.56    30.00             -          1.11          0.8848       5.48%      1.2981         103.85    32.2916       35.88
+Class 07 Stock Option            1.11       5.56    35.00             -          1.11          0.8514       5.27%      1.3542         108.34    29.7880       33.10
+Class 08 Stock Option            1.11       5.56    40.00             -          1.11          0.8178       5.06%      1.4066         112.53    27.5462       30.61
+Class 09 Early Vest Option       1.11       5.56    45.00            25          0.36          0.3922       2.43%      1.4556         116.45    12.7666       14.19
+Class 10 Early Vest Option       1.11       5.56    50.00            30          0.33          0.3759       2.33%      1.5017         120.14    11.8601       13.18
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------
+TOTAL CAPITAL STRUCTURE         20.00     100.00                                18.47                     100.00%                      80.00                 850.00
+===================================================================================================================================================================
 ```
 
-**Note:** The equity fair-value weighted sum of `Specific Vol %` across all classes equals exactly the target input of **55.00%**, satisfying audit trail and compliance verification.
+**Note:** The equity fair-value weighted sum of `Specific Vol %` across all classes equals exactly the target input of **80.00%**, satisfying audit trail and compliance verification.
 
 ---
+
 
 ## 7. Dependencies & Setup
 
@@ -337,6 +391,6 @@ pip install -r requirements.txt
 ### Quick Run
 
 ```bash
-# Generate comprehensive HTML report across 4 capital structure scenarios with one click and auto-open in browser
+# Generate comprehensive HTML report across 5 capital structure scenarios with one click and auto-open in browser
 python main.py
 ```

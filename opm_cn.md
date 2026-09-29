@@ -35,26 +35,44 @@
 ```
 Total Enterprise / Equity Value (TEV, S0)
 ├── Class 01: Common Stock (普通股)
-│   ├── 股數權重: 10% - 100% (依情境配置，預設 50% / 10.5 股)
+│   ├── 股數權重: 10% - 100% (依情境配置，預設 50% / 10.0 股)
 │   ├── 履約價: K = 0.0 (無履約門檻)
 │   └── 歸屬條件: 100% 完全歸屬 (vest_pct = 1.0)
 │
-├── Class 02 - 10: Stock Options (員工認股權 / 香草期權)
-│   ├── 類別數量: 9 個類別 (每類別 0.50 股，共 4.5 股)
-│   ├── 履約價區間: K in [10.0, 41.67]
+├── Class 02 - 08: Stock Options (員工認股權 / 香草期權)
+│   ├── 類別數量: 7 個類別 (每類別 0.50 股，共 3.5 股)
+│   ├── 履約價區間: K in [10.0, 40.0]
 │   └── 歸屬條件: 100% 完全歸屬 (無股價門檻，thres = 0.0)
 │
-├── Class 11 - 30: Warrants (認股權證 / 附門檻期權)
-│   ├── 類別數量: 20 個類別 (每類別 0.20 股，共 4.0 股)
-│   ├── 履約價區間: K in [45.62, 123.96]
-│   ├── 門檻條件: thres = 1.10 * K (標的資產需超過 110% K)
+├── Class 09 - 10: Early Vest Options (提早歸屬期權)
+│   ├── 類別數量: 2 個類別 (每類別 0.50 股，共 1.0 股)
+│   ├── 履約價區間: K in [45.0, 50.0]
+│   ├── 門檻條件: thres = max(K - 20.0, 0.1)
+│   └── 歸屬比例: 達到門檻後歸屬 50% (vest_pct = 0.50)
+│
+├── Class 11 - 20: Warrants (認股權證 / 附門檻期權)
+│   ├── 類別數量: 10 個類別 (每類別 0.20 股，共 2.0 股)
+│   ├── 履約價區間: K in [55.0, 100.0]
+│   ├── 門檻條件: thres = K + 50.0
 │   └── 歸屬比例: 達到門檻後歸屬 85% (vest_pct = 0.85)
+│
+├── Class 21 - 25: Mimic Linear (擬真線性歸屬)
+│   ├── 類別數量: 5 個類別 (每類別 0.15 股，共 0.75 股)
+│   ├── 履約價區間: K in [105.0, 125.0]
+│   ├── 門檻區間: thres = [K + 10.0 .. K + 110.0] (100 階梯近似)
+│   └── 歸屬比例: 線性階梯歸屬 (0.01 至 1.0)
+│
+├── Class 26 - 30: True Linear (真實連續線性歸屬)
+│   ├── 類別數量: 5 個類別 (每類別 0.15 股，共 0.75 股)
+│   ├── 履約價區間: K in [130.0, 150.0]
+│   ├── 門檻區間: thres = [K + 10.0 -> K + 110.0] (連續線性)
+│   └── 歸屬比例: 連續線性歸屬 (0.0 至 1.0)
 │
 └── Class 31 - 50: Incentive Units (管理層激勵股份單位)
     ├── 類別數量: 20 個類別 (每類別 0.10 股，共 2.0 股)
-    ├── 履約價區間: K in [127.92, 200.0]
-    ├── 雙階梯門檻: thres = [1.05 * K, 1.20 * K]
-    └── 階梯歸屬: 超過 105% K 歸屬 50%，超過 120% K 歸屬 100%
+    ├── 履約價區間: K in [155.0, 250.0]
+    ├── 雙階梯門檻: thres = [K + 30.0, K + 150.0]
+    └── 階梯歸屬: 超過 K + 30 歸屬 50%，超過 K + 150 歸屬 100%
 ```
 
 ### 1.2 CCA (OPM) for private company practice
@@ -148,19 +166,19 @@ $$f(S_T) = \max(S_T - K,\ 0) \times v(S_T)$$
 ```python
 from black_scholes import call_option
 
-# 類型 1: 普通股票期權 (Class 02-10)
+# 類型 1: 普通股票期權 (Class 02-08)
 # 無門檻限制，行使即全額歸屬
 vanilla = call_option(K=50.0, thres=0.0, vest_pct=1.0, is_step=1)
 
-# 類型 2: 認股權證 (Class 11-30)
-# 資產價格須超過門檻 (thres=K*1.10) 才可歸屬 85%
-warrants = call_option(K=100.0, thres=110.0, vest_pct=0.85, is_step=1)
-#   payoff(S_T) = max(S_T - 100, 0) * (0.85 if S_T > 110 else 0)
+# 類型 2: 認股權證 (Class 11-20)
+# 資產價格須超過門檻 (thres = K + 50) 才可歸屬 85%
+warrants = call_option(K=100.0, thres=150.0, vest_pct=0.85, is_step=1)
+#   payoff(S_T) = max(S_T - 100, 0) * (0.85 if S_T > 150 else 0)
 
 # 類型 3: 激勵股份單位 (Class 31-50)
-# 兩段式歸屬：超過 thres[0]=105 歸屬 50%，超過 thres[1]=120 歸屬 100%
-incentive = call_option(K=100.0, thres=[105.0, 120.0], vest_pct=[0.50, 1.00], is_step=1)
-#   payoff(S_T) = max(S_T - 100, 0) * {0.0 if S_T<105 | 0.5 if 105<=S_T<120 | 1.0 if S_T>=120}
+# 兩段式歸屬：超過 thres[0]=K+30 歸屬 50%，超過 thres[1]=K+150 歸屬 100%
+incentive = call_option(K=100.0, thres=[130.0, 250.0], vest_pct=[0.50, 1.00], is_step=1)
+#   payoff(S_T) = max(S_T - 100, 0) * {0.0 if S_T<130 | 0.5 if 130<=S_T<250 | 1.0 if S_T>=250}
 ```
 
 由於支付函數的**階梯不連續性**，傳統有限差分無法穩定求導。梯形積分法只需評估不連續的 $f(S_T)$ 的函數值，**完全無需對支付函數微分**，因此天然適合此類異型期權。
@@ -218,13 +236,16 @@ d[k] = disc * trapezoid(fn(grid) * w_delta, grid)   # 只需 1 次積分
 ```
 opm/
 ├── black_scholes.py     # 核心引擎
-│   ├── call_option()             - 統一異型期權支付工廠
-│   ├── make_mutual_grid()        - 建立共享 PDF 網格
-│   ├── make_delta_weight()       - LRM Delta 積分核
-│   ├── bs_price_and_delta_multiple() - 公開 API：同時計算 FV 與 Delta
-│   ├── equity_moments()          - 計算 TEV0、voleq、偏態、峰態
-│   ├── calibrate_cca()           - Nelder-Mead 校準 S0 & sigma
-│   └── run_opm_analysis()        - 完整報表字串輸出
+│   ├── call_option()                  - 統一異型期權支付工廠
+│   ├── make_mutual_grid()             - 建立共享對數常態 PDF 網格
+│   ├── make_delta_weight()            - LRM Delta 積分核 (w_delta)
+│   ├── bs_price_and_delta_multiple()  - 公開 API：同時計算 FV 與 Delta
+│   ├── equity_moments()              - 計算 TEV0 及隱含股權波動率
+│   ├── calibrate_cca()               - Nelder-Mead 校準 S0 & sigma
+│   ├── MarketParams                  - Dataclass：市場輸入與網格設定
+│   ├── CalibrationTargets            - Dataclass：目標 TEV 與股權波動率
+│   ├── calc_portfolio_allocations()  - 計算各類別 Omega、Elasticity、Specific Vol
+│   └── run_opm_analysis()            - 完整報表字串輸出
 │
 ├── portfolio.py         # 資本結構定義
 │   └── build_capital_structure() - 建立 50 類別的股票薪酬投資組合
@@ -243,13 +264,15 @@ opm/
 
 $$\mathcal{L}(S_0, \sigma_A) = \underbrace{\left(\frac{\text{TEV}(S_0, \sigma_A) - \text{TEV}_0^{\text{target}}}{\text{TEV}_0^{\text{target}}}\right)^2}_{\text{市值誤差}} + \underbrace{\left(\frac{\sigma_{eq}(S_0, \sigma_A) - \sigma_{eq}^{\text{target}}}{\sigma_{eq}^{\text{target}}}\right)^2}_{\text{波動率誤差}}$$
 
-其中 $\sigma_{eq}$ 採用**積分波動率**的嚴謹定義（與蒙地卡羅路徑模擬一致）：
+其中 $\sigma_{eq}$ 採用 **Merton 槓桿彈性公式**，以數值積分所得的投資組合 Delta 計算：
 
-$$\sigma_{eq} = \frac{\text{std}\left(\ln(\text{TEV}_T / \text{TEV}_0)\right)}{\sqrt{T}} = \frac{\sqrt{\int \left(\ln\frac{f_{\text{total}}(S_T)}{\text{TEV}_0} - \mu_{\ln}\right)^2 p(S_T)\,dS_T}}{\sqrt{T}}$$
+$$\sigma_{eq}(S_0, \sigma_A) = \sigma_A \cdot \frac{S_0 \cdot \Delta_{\text{total}}}{\text{TEV}_0}$$
 
-為加速 Nelder-Mead 收斂速度（從 80 多次跌代降至約 30 次），本演算法採用了根據槓桿程度動態調整的「初始猜測 (Initial Guess)」策略：
+其中 $\Delta_{\text{total}} = \sum_i N_i \Delta_i$ 為在共享相互網格上計算的組合總 Delta。此公式對任意支付結構均精確成立，並直接對應 Itô 連鎖法則下的股權波動率推導。
+
+為加速 Nelder-Mead 收斂，本演算法以還原基準價格作為 $S_0$ 的初始猜測；$\sigma_A$ 則直接以目標股權波動率初始化：
 - $S_0^{\text{guess}} = \frac{\text{TEV}_0 + \text{總行使價收益}}{\text{總股數}}$ (還原基準價格)
-- $\sigma_A^{\text{guess}} = \sigma_{eq}^{\text{target}} \times \sqrt{\frac{\text{普通股股數}}{\text{總股數}}}$ (考量資本結構帶來的波動率擴張效應)
+- $\sigma_A^{\text{guess}} = \sigma_{eq}^{\text{target}}$ (直接初始化；槓桿調整交由優化器自行求解)
 
 ### 5.2 各類別特定波動率的分配 (Option B)
 
@@ -261,40 +284,63 @@ $$\sigma_{i,\text{alloc}} = \sigma_{eq}^{\text{target}} \times \frac{\text{TEV}_
 
 $$\sum_i \frac{N_i V_i}{\text{TEV}_0} \cdot \sigma_{i,\text{alloc}} = \sigma_{eq}^{\text{target}} \cdot \frac{\sum_i N_i \Delta_i}{\Delta_{\text{total}}} = \sigma_{eq}^{\text{target}} \cdot 1 = \sigma_{eq}^{\text{target}}$$
 
----
-
 ## 6. 完整執行範例
 
-以下是一個包含 3 種期權類別的完整定價與校準範例：
+以下是一個包含 **10 種股份類別**的完整定價與校準範例，輸入參數與 `generate_report.py` 的情境 4（50/50 結構）完全一致。第 2–8 類為普通股票期權；第 9–10 類為附有歸屬條件的「提前歸屬期權 (Early Vest Option)」。
 
 ```python
-from black_scholes import (
-    call_option, MarketParams, CalibrationTargets, run_opm_analysis
-)
+from black_scholes import call_option, MarketParams, CalibrationTargets, run_opm_analysis
 
-# --- 1. 定義資本結構（3 個股份類別）---
+# --- 1. 定義資本結構（10 個股份類別，50/50 普通股 / 其他）---
 portfolio = {
     "Class 01 Common Stock": {
         "params": {"K": 0.0, "thres": 0.0, "vest_pct": 1.0, "is_step": 1},
-        "th_str": "-", "shares": 5.0,
-        "fn": call_option(K=0.0),                         # 普通股：無履約價
+        "th_str": "-", "shares": 10.0, "fn": call_option(K=0.0),
     },
     "Class 02 Stock Option": {
-        "params": {"K": 50.0, "thres": 0.0, "vest_pct": 1.0, "is_step": 1},
-        "th_str": "-", "shares": 2.0,
-        "fn": call_option(K=50.0),                        # 香草期權：履約價 50
+        "params": {"K": 10.0, "thres": 0.0, "vest_pct": 1.0, "is_step": 1},
+        "th_str": "-", "shares": 1.1111, "fn": call_option(K=10.0),
     },
-    "Class 03 Incentive Unit": {
-        "params": {"K": 80.0, "thres": [84.0, 96.0], "vest_pct": [0.50, 1.00], "is_step": 1},
-        "th_str": "[84,96]", "shares": 1.0,
-        "fn": call_option(K=80.0, thres=[84.0, 96.0], vest_pct=[0.50, 1.00], is_step=1),
-        # 激勵單位：履約價 80，資產>84 時歸屬 50%，>96 時歸屬 100%
+    "Class 03 Stock Option": {
+        "params": {"K": 15.0, "thres": 0.0, "vest_pct": 1.0, "is_step": 1},
+        "th_str": "-", "shares": 1.1111, "fn": call_option(K=15.0),
+    },
+    "Class 04 Stock Option": {
+        "params": {"K": 20.0, "thres": 0.0, "vest_pct": 1.0, "is_step": 1},
+        "th_str": "-", "shares": 1.1111, "fn": call_option(K=20.0),
+    },
+    "Class 05 Stock Option": {
+        "params": {"K": 25.0, "thres": 0.0, "vest_pct": 1.0, "is_step": 1},
+        "th_str": "-", "shares": 1.1111, "fn": call_option(K=25.0),
+    },
+    "Class 06 Stock Option": {
+        "params": {"K": 30.0, "thres": 0.0, "vest_pct": 1.0, "is_step": 1},
+        "th_str": "-", "shares": 1.1111, "fn": call_option(K=30.0),
+    },
+    "Class 07 Stock Option": {
+        "params": {"K": 35.0, "thres": 0.0, "vest_pct": 1.0, "is_step": 1},
+        "th_str": "-", "shares": 1.1111, "fn": call_option(K=35.0),
+    },
+    "Class 08 Stock Option": {
+        "params": {"K": 40.0, "thres": 0.0, "vest_pct": 1.0, "is_step": 1},
+        "th_str": "-", "shares": 1.1111, "fn": call_option(K=40.0),
+    },
+    "Class 09 Early Vest Option": {
+        # 資產價格超過 25 時歸屬 50%
+        "params": {"K": 45.0, "thres": 25.0, "vest_pct": 0.5, "is_step": 1},
+        "th_str": "25", "shares": 1.1111, "fn": call_option(K=45.0, thres=25.0, vest_pct=0.5),
+    },
+    "Class 10 Early Vest Option": {
+        # 資產價格超過 30 時歸屬 50%
+        "params": {"K": 50.0, "thres": 30.0, "vest_pct": 0.5, "is_step": 1},
+        "th_str": "30", "shares": 1.1111, "fn": call_option(K=50.0, thres=30.0, vest_pct=0.5),
     },
 }
 
 # --- 2. 設定市場參數與校準目標 ---
-params  = MarketParams(T=2.0, r=0.05, q=0.0, N=20000)
-targets = CalibrationTargets(tev0=1000.0, voleq=0.55)   # 目標股權市值 $1000，波動率 55%
+# 輸入與 generate_report.py 情境 4（50/50 結構）完全一致
+params  = MarketParams(S0=80, sigma=0.85, T=2.0, r=0.05, q=0.0, N=10000)
+targets = CalibrationTargets(tev0=850.0, voleq=0.80)  # 目標股權市值 $850，波動率 80%
 
 # --- 3. 執行校準與報表 ---
 report = run_opm_analysis(portfolio, params, targets)
@@ -304,24 +350,32 @@ print(report)
 **輸出範例：**
 
 ```
-===================================================================================================================================================
-Summary   : Total Equity = $1,000.00 | Equity Vol = 55.00% | Implied S0 = $131.2074 | T = 2.0y | r = 5.0%
-Dilution  : No Dilution: $200.00 | By OPM: $131.21 | By Vested Shares: $125.00 | By Outstanding Shares: $125.00
-Diagnosis : Converged in 43 iters (86.3 ms) | Batch Run Time = 3.10 ms
-===================================================================================================================================================
+===================================================================================================================================================================
+Summary   : Total Equity = $850.00 | Equity Vol = 80.00% | Implied S0 = $54.4445 | T = 2.0y | r = 5.0%
+Dilution  : No Dilution: $85.00 | By OPM: $54.44 | By Vested Shares: $46.03 | By Outstanding Shares: $42.50
+Diagnosis : Converged in 38 iters (38.1 ms) | Batch Run Time = 0.87 ms
+===================================================================================================================================================================
 Class                          Shares Shares (%) Strike K         Thres Vested Shares  Delta (dV/dS0)   Omega (Ω)  Elasticity Specific Vol %  FV (PS $)   Total ($)
----------------------------------------------------------------------------------------------------------------------------------------------------
-Class 01 Common Stock            5.00      62.50     0.00             -          5.00          1.0000      62.50%      1.0000          55.00     131.21      656.04
-Class 02 Stock Option            2.00      25.00    50.00             -          2.00          0.7231      25.00%      2.5123         138.18      37.75       75.50
-Class 03 Incentive Unit          1.00      12.50    80.00       [84,96]          0.67          0.4512      12.50%      3.8211         210.16      15.49       15.49
----------------------------------------------------------------------------------------------------------------------------------------------------
-TOTAL CAPITAL STRUCTURE          8.00     100.00                                 7.67                     100.00%                      55.00                 747.03
-===================================================================================================================================================
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Class 01 Common Stock           10.00      50.00     0.00             -         10.00          1.0000      55.74%      0.8702          69.62    54.4446      544.45
+Class 02 Stock Option            1.11       5.56    10.00             -          1.11          0.9897       6.13%      1.0268          82.15    45.6646       50.74
+Class 03 Stock Option            1.11       5.56    15.00             -          1.11          0.9715       6.02%      1.1024          88.19    41.7512       46.39
+Class 04 Stock Option            1.11       5.56    20.00             -          1.11          0.9464       5.86%      1.1727          93.82    38.2349       42.48
+Class 05 Stock Option            1.11       5.56    25.00             -          1.11          0.9169       5.68%      1.2378          99.03    35.0941       38.99
+Class 06 Stock Option            1.11       5.56    30.00             -          1.11          0.8848       5.48%      1.2981         103.85    32.2916       35.88
+Class 07 Stock Option            1.11       5.56    35.00             -          1.11          0.8514       5.27%      1.3542         108.34    29.7880       33.10
+Class 08 Stock Option            1.11       5.56    40.00             -          1.11          0.8178       5.06%      1.4066         112.53    27.5462       30.61
+Class 09 Early Vest Option       1.11       5.56    45.00            25          0.36          0.3922       2.43%      1.4556         116.45    12.7666       14.19
+Class 10 Early Vest Option       1.11       5.56    50.00            30          0.33          0.3759       2.33%      1.5017         120.14    11.8601       13.18
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------
+TOTAL CAPITAL STRUCTURE         20.00     100.00                                18.47                     100.00%                      80.00                 850.00
+===================================================================================================================================================================
 ```
 
-**注意：** 所有類別的 `Specific Vol %` 以股權市值加權後的總和，精確等於輸入的目標值 **55.00%**，可供財務審計直接使用。
+**注意：** 所有類別的 `Specific Vol %` 以股權市值加權後的總和，精確等於輸入的目標值 **80.00%**，可供財務審計直接使用。
 
 ---
+
 
 ## 7. 相依套件與安裝 (Dependencies & Setup)
 
@@ -336,7 +390,7 @@ pip install -r requirements.txt
 ### 快速執行 (Quick Run)
 
 ```bash
-# 一鍵產生包含 4 種資本結構情境的完整 HTML 報表，並自動在瀏覽器開啟
+# 一鍵產生包含 5 種資本結構情境的完整 HTML 報表，並自動在瀏覽器開啟
 python main.py
 ```
 
