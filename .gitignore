@@ -22,6 +22,7 @@ build/
 # Generated reports & outputs
 *.html
 !capital_structure_report.html
+!index.html
 
 # Package manager lockfiles & python environment
 uv.lock
