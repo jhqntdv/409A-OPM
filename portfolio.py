@@ -6,30 +6,58 @@ from black_scholes import call_option
 
 def build_capital_structure(common_ratio: float = 0.50) -> dict:
     """Builds unified 50-class capital structure (Common fixed at 10.0 shs)."""
-    strikes = list(range(10, 255, 5))
     other_classes = {}
-    for idx, k_raw in enumerate(strikes, 2):
-        k = float(k_raw)
-        if idx <= 8:
-            name, params, th_str, base_sh = f"Class {idx:02d} Stock Option", {"K": k, "thres": 0.0, "vest_pct": 1.0, "is_step": 1}, "-", 0.50
-        elif 9 <= idx <= 10:
-            th = max(k - 20.0, 0.1)
-            name, params, th_str, base_sh = f"Class {idx:02d} Early Vest Option", {"K": k, "thres": th, "vest_pct": 0.50, "is_step": 1}, f"{th:.0f}", 0.50
-        elif 11 <= idx <= 20:
-            th = k + 50.0
-            name, params, th_str, base_sh = f"Class {idx:02d} Warrants", {"K": k, "thres": th, "vest_pct": 0.85, "is_step": 1}, f"{th:.0f}", 0.20
-        elif 21 <= idx <= 25:
-            th_start, th_end = k + 10.0, k + 110.0
-            thres_arr = np.linspace(th_start, th_end, 100).tolist()
-            vest_arr = np.linspace(0.01, 1.0, 100).tolist()
-            name, params, th_str, base_sh = f"Class {idx:02d} Mimic Linear", {"K": k, "thres": thres_arr, "vest_pct": vest_arr, "is_step": 1}, f"[{th_start:.0f}..{th_end:.0f}]", 0.15
-        elif 26 <= idx <= 30:
-            th_start, th_end = k + 10.0, k + 110.0
-            name, params, th_str, base_sh = f"Class {idx:02d} True Linear", {"K": k, "thres": [th_start, th_end], "vest_pct": [0.0, 1.0], "is_step": 0}, f"[{th_start:.0f}->{th_end:.0f}]", 0.15
+
+    # 3 PRSUs (K=0.0, high threshold)
+    prsu_thresholds = {2: 30.0, 3: 50.0, 4: 80.0}
+    for idx in range(2, 5):
+        name = f"Class {idx:02d} PRSUs"
+        params = {"K": 0.0, "thres": prsu_thresholds[idx], "vest_pct": 1.0, "is_step": 1}
+        other_classes[name] = {"params": params, "th_str": f"{prsu_thresholds[idx]:.0f} (100%)", "base_shares": 0.15}
+
+    # 4 Warrants (K=0.01)
+    for idx in range(5, 9):
+        name = f"Class {idx:02d} Warrants"
+        params = {"K": 0.01, "thres": 0.0, "vest_pct": 1.0, "is_step": 1}
+        other_classes[name] = {"params": params, "th_str": "-", "base_shares": 0.50}
+
+    # 12 Stock Options (K = 2.0 to 13.0)
+    for idx in range(9, 21):
+        k = float(idx - 7)
+        name = f"Class {idx:02d} Stock Options"
+        params = {"K": k, "thres": 0.0, "vest_pct": 1.0, "is_step": 1}
+        other_classes[name] = {"params": params, "th_str": "-", "base_shares": 0.50}
+
+    # 20 PIUs (K = 18.0 to 56.0, step 2.0)
+    for idx in range(21, 41):
+        k = 18.0 + (idx - 21) * 2.0
+        is_step = 1 if idx % 2 == 0 else 0
+        name_suffix = " (Linear)" if is_step == 0 else ""
+        name = f"Class {idx:02d} PIUs{name_suffix}"
+        
+        if idx >= 36:
+            # 5 tranches
+            th1 = k - 2.0 if k - 2.0 > 0 else 0.5
+            th2, th3, th4, th5 = k + 2.0, k + 6.0, k + 10.0, k + 14.0
+            params = {"K": k, "thres": [th1, th2, th3, th4, th5], "vest_pct": [0.20, 0.40, 0.60, 0.80, 1.0], "is_step": is_step}
+            th_str = f"[{th1:.0f}...{th5:.0f}]"
         else:
-            th1, th2 = k + 30.0, k + 150.0
-            name, params, th_str, base_sh = f"Class {idx:02d} Incentive Unit", {"K": k, "thres": [th1, th2], "vest_pct": [0.50, 1.00], "is_step": 1}, f"[{th1:.0f},{th2:.0f}]", 0.10
-        other_classes[name] = {"params": params, "th_str": th_str, "base_shares": base_sh}
+            # 3 tranches
+            th1, th2, th3 = k - 2.0 if k - 2.0 > 0 else 0.5, k + 5.0, k + 10.0
+            params = {"K": k, "thres": [th1, th2, th3], "vest_pct": [0.33, 0.66, 1.0], "is_step": is_step}
+            th_str = f"[{th1:.0f},{th2:.0f},{th3:.0f}]"
+            
+        other_classes[name] = {"params": params, "th_str": th_str, "base_shares": 0.20}
+
+    # 10 Super PIUs (K = 60.0 to 150.0)
+    for idx in range(41, 51):
+        k = 60.0 + (idx - 41) * 10.0
+        multiple = 7 + (idx - 41) % 4 # 7x, 8x, 9x, 10x
+        th = float(multiple * 10) 
+        if th < k: th = k + 20.0
+        name = f"Class {idx:02d} Super PIUs"
+        params = {"K": k, "thres": th, "vest_pct": 1.0, "is_step": 1}
+        other_classes[name] = {"params": params, "th_str": f"{th:.0f} (100%)", "base_shares": 0.10}
 
     sh_common = 10.0
     tot_base_other = sum(item["base_shares"] for item in other_classes.values())
