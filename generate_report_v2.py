@@ -6,42 +6,38 @@ import os
 import webbrowser
 from black_scholes import MarketParams, CalibrationTargets, run_opm_analysis, preferred_convertible
 from portfolio import (
-    build_capital_structure_100_0,
-    build_capital_structure_90_10,
-    build_capital_structure_75_25,
-    build_capital_structure_50_50,
+    build_capital_structure_pref_100_0,
+    build_capital_structure_pref_90_10,
+    build_capital_structure_pref_75_25,
+    build_capital_structure_pref_50_50,
+    build_capital_structure_pref_25_75,
 )
 
 VOLATILITIES = [("40", 0.40, "40%"), ("80", 0.80, "80%"), ("120", 1.20, "120%"), ("160", 1.60, "160%")]
 SCENARIOS = [
-    ("s1", "100% (100/0)", "Scenario 1: 100/0 Structure (100% Common)", build_capital_structure_100_0),
-    ("s2", "90% (90/10)", "Scenario 2: 90/10 Structure (90% Common)", build_capital_structure_90_10),
-    ("s3", "75% (75/25)", "Scenario 3: 75/25 Structure (75% Common)", build_capital_structure_75_25),
-    ("s4", "50% (50/50)", "Scenario 4: 50/50 Structure (50% Common)", build_capital_structure_50_50),
+    ("s1", "100/0 Pref", "Scenario 1: 100/0 w/Pref 100", build_capital_structure_pref_100_0),
+    ("s2", "90/10 Pref", "Scenario 2: 90/10 w/Pref 100", build_capital_structure_pref_90_10),
+    ("s3", "75/25 Pref", "Scenario 3: 75/25 w/Pref 100", build_capital_structure_pref_75_25),
+    ("s4", "50/50 Pref", "Scenario 4: 50/50 w/Pref 100", build_capital_structure_pref_50_50),
+    ("s5", "25/75 Pref", "Scenario 5: 25/75 w/Pref 100", build_capital_structure_pref_25_75),
 ]
 
 
 def generate_html_report_v2(filename="index2.html"):
     """Compute combinations for two TEVs and display side-by-side clickable sensitivity matrices."""
     TEVS = [(550, "High Equity Value ($550M)"), (250, "Low Equity Value ($250M)")]
+    HORIZON_T = 2.0
+    RISK_FREE_R = 0.05
     
-    def get_portfolio(fn):
-        p = fn()
-        new_p = {
-            "Class 00 Series A Preferred": {
-                "params": {"K": 0.0},
-                "th_str": "-",
-                "shares": 5.0,
-                "fn": preferred_convertible(acc_face=1.0, conv_price=10.0, face=50.0, pik=0.08, lp_multiple=1.0, T=2.0, r=0.05, rky=0.15, freq=2)
-            }
-        }
-        new_p.update(p)
-        return new_p
+    def get_portfolio(fn, T=HORIZON_T, r=RISK_FREE_R):
+        # We no longer need to dynamically inject preferred stock here,
+        # because the new builder functions in portfolio.py already include it.
+        return fn()
 
     reports = {
         (tev_val, v_k, s_k): run_opm_analysis(
-            get_portfolio(fn),
-            MarketParams(S0=50.0, sigma=v_val, T=2.0, r=0.05, q=0.0, N=5000),
+            get_portfolio(fn, T=HORIZON_T, r=RISK_FREE_R),
+            MarketParams(S0=50.0, sigma=v_val, T=HORIZON_T, r=RISK_FREE_R, q=0.0, N=5000),
             CalibrationTargets(tev0=tev_val, voleq=v_val),
         )
         for tev_val, _ in TEVS
@@ -77,7 +73,7 @@ def generate_html_report_v2(filename="index2.html"):
         <thead>
           <tr>
             <th rowspan="2">Equity Volatility</th>
-            <th colspan="4">% of Common Shares in Capital Structure</th>
+            <th colspan="{len(SCENARIOS)}">% of Common Shares in Capital Structure</th>
           </tr>
           <tr>
             {"".join(f"<th>{hdr}</th>" for _, hdr, _, _ in SCENARIOS)}

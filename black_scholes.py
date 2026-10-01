@@ -103,19 +103,23 @@ def call_option(K: float, thres: Union[float, Sequence[float], np.ndarray] = 0.0
     return payoff
 
 
-def preferred_convertible(acc_face: float, conv_price: float, face: float, pik: float, lp_multiple: float,
-                           T: float, r: float, rky: float, freq: int = 2) -> Callable[[np.ndarray], np.ndarray]:
-    """Create non-participating convertible Preferred payoff with regime-dependent discounting.
-    r and rky follow the same annualized, continuously-compounded convention as MarketParams.r
-    r is the rate applied when conversion dominates; rky is the
+def preferred_convertible(curr_face: float, conv_price: float, issue_face: float = 1000.0, pik: float = 0.0, lp_multiple: float = 1.0,
+                           T: float = 2.0, r: float = 0.05, rky: float = 0.15, freq: int = 2) -> Callable[[np.ndarray], np.ndarray]:
+    """Convertible preferred payoff where accrued PIK converts into equity.
+    r discounts conversion regime; rky discounts liquidation preference regime.
     """
     if freq not in (1, 2, 4, 12):
         raise ValueError(f"freq must be one of (annual: 1, semi-annual: 2, quarterly: 4, monthly: 12), got {freq}")
+    if lp_multiple < 1.0:
+        raise ValueError(f"lp_multiple must be >= 1.0, got {lp_multiple}")
+    if curr_face < issue_face:
+        raise ValueError(f"curr_face must be >= issue_face, got curr_face={curr_face}, issue_face={issue_face}")
 
-    liq_pref = face * (1.0 + pik / freq) ** (freq * T) * lp_multiple
+    acc_face = curr_face * (1.0 + pik / freq) ** (freq * T)    
+    liq_pref = max(acc_face, issue_face * lp_multiple)
     rfr_discount = np.exp(-r * T)
     risky_discount = np.exp(-rky * T)
-    k_conv = liq_pref * conv_price / acc_face  # ST where Conversion == LiqPref
+    k_conv = liq_pref * conv_price / acc_face  # Conversion includes PIK interest
 
     def payoff(ST: np.ndarray) -> np.ndarray:
         ST = np.asarray(ST, dtype=float)
@@ -125,13 +129,33 @@ def preferred_convertible(acc_face: float, conv_price: float, face: float, pik: 
         ST = np.asarray(ST, dtype=float)
         return np.where(acc_face * ST / conv_price >= liq_pref, rfr_discount, risky_discount)
 
+    def sync_timing(new_T: float, new_r: float = None) -> None:
+        # Sync timing and rates with the shared option pricing portfolio.
+        nonlocal T, r, acc_face, liq_pref, rfr_discount, risky_discount, k_conv
+        T = float(new_T)
+        if new_r is not None:
+            r = float(new_r)
+        acc_face = curr_face * (1.0 + pik / freq) ** (freq * T)
+        liq_pref = max(acc_face, issue_face * lp_multiple)
+        rfr_discount = np.exp(-r * T)
+        risky_discount = np.exp(-rky * T)
+        k_conv = liq_pref * conv_price / acc_face
+        payoff.liq_pref = liq_pref
+        payoff.k_conv = k_conv
+        payoff.thres = np.array([k_conv])
+        payoff.T = T
+        payoff.r = r
+
     payoff.discount_fn = discount_fn
+    payoff.sync_timing = sync_timing
     payoff.vesting = lambda ST: np.ones_like(np.asarray(ST, dtype=float))  # no vesting schedule
     payoff.thres = np.array([k_conv])
     payoff.is_step = 1
     payoff.is_preferred = True
     payoff.liq_pref = liq_pref
     payoff.k_conv = k_conv
+    payoff.T = T
+    payoff.r = r
 
     return payoff
 
@@ -234,6 +258,11 @@ def bs_price_and_delta_multiple(
     """Simultaneously calculate prices and Deltas for all payoffs in the portfolio using a single mutual grid."""
     is_dict = isinstance(payoffs, dict)
     items = list(payoffs.items()) if is_dict else list(enumerate(payoffs))
+
+    # Synchronize preferred timing and rate with portfolio parameters.
+    for _, fn in items:
+        if getattr(fn, "is_preferred", False) and hasattr(fn, "sync_timing"):
+            fn.sync_timing(T, r)
 
     # When T or sigma are invalid, fallback to intrinsic-value / finite-difference logic.
     if T <= 0.0 or sigma <= 0.0:
@@ -604,6 +633,10 @@ def _format_report(
 
 def _execute_pricing(S0: float, T: float, r: float, q: float, sigma: float, N: int, payoffs: dict, insert_critical: bool) -> Tuple[dict, dict, PricingGrid, float]:
     t0 = time.perf_counter()
+    # Synchronize preferred timing and rate with portfolio parameters.
+    for fn in payoffs.values():
+        if getattr(fn, "is_preferred", False) and hasattr(fn, "sync_timing"):
+            fn.sync_timing(T, r)
     if T <= 0.0 or sigma <= 0.0:
         prices, deltas = bs_price_and_delta_multiple(S0, T, r, q, sigma, payoffs, N=N, insert_critical=insert_critical)
         pricing_grid = _build_pricing_grid(S0, T, r, q, sigma, N=N, critical_prices=None)

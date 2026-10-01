@@ -8,6 +8,7 @@ from portfolio import (
     build_capital_structure_90_10,
     build_capital_structure_75_25,
     build_capital_structure_50_50,
+    build_capital_structure_25_75,
 )
 
 VOLATILITIES = [("40", 0.40, "40%"), ("80", 0.80, "80%"), ("120", 1.20, "120%"), ("160", 1.60, "160%")]
@@ -16,6 +17,7 @@ SCENARIOS = [
     ("s2", "90% (90/10)", "Scenario 2: 90/10 Structure (90% Common)", build_capital_structure_90_10),
     ("s3", "75% (75/25)", "Scenario 3: 75/25 Structure (75% Common)", build_capital_structure_75_25),
     ("s4", "50% (50/50)", "Scenario 4: 50/50 Structure (50% Common)", build_capital_structure_50_50),
+    ("s5", "25% (25/75)", "Scenario 5: 25/75 Structure (25% Common)", build_capital_structure_25_75),
 ]
 
 
@@ -57,7 +59,7 @@ def generate_html_report(filename="index.html"):
         <thead>
           <tr>
             <th rowspan="2">Equity Volatility</th>
-            <th colspan="4">% of Common Shares in Capital Structure</th>
+            <th colspan="{len(SCENARIOS)}">% of Common Shares in Capital Structure</th>
           </tr>
           <tr>
             {"".join(f"<th>{hdr}</th>" for _, hdr, _, _ in SCENARIOS)}

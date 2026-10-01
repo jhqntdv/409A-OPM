@@ -96,3 +96,55 @@ def build_capital_structure_50_50() -> dict:
 
 def build_capital_structure_25_75() -> dict:
     return build_capital_structure(common_ratio=0.25)
+
+def build_capital_structure_with_pref_100(common_ratio: float = 0.50) -> dict:
+    from black_scholes import preferred_convertible
+    p = build_capital_structure(common_ratio)
+    new_p = {
+        "Class 00 Series A Preferred": {
+            "params": {"K": 0.0},
+            "th_str": "-",
+            "shares": 5.0,
+            "fn": preferred_convertible(curr_face=20.0, conv_price=20.0, issue_face=20.0, pik=0.08, lp_multiple=1.0, T=2.0, r=0.05, rky=0.15, freq=2)
+        }
+    }
+    new_p.update(p)
+    return new_p
+
+def build_capital_structure_pref_100_0() -> dict:
+    return build_capital_structure_with_pref_100(1.0)
+
+def build_capital_structure_pref_90_10() -> dict:
+    return build_capital_structure_with_pref_100(0.90)
+
+def build_capital_structure_pref_75_25() -> dict:
+    return build_capital_structure_with_pref_100(0.75)
+
+def build_capital_structure_pref_50_50() -> dict:
+    return build_capital_structure_with_pref_100(0.50)
+
+def build_capital_structure_pref_25_75() -> dict:
+    return build_capital_structure_with_pref_100(0.25)
+
+def build_simple_preferred_common_only(pref_face: float = 550.0) -> dict:
+    from black_scholes import preferred_convertible, call_option
+    return {
+        "Class 00 Series A Preferred": {
+            "params": {"K": 0.0},
+            "th_str": "-",
+            "shares": pref_face / 20.0,
+            "fn": preferred_convertible(curr_face=20.0, conv_price=20.0, issue_face=20.0, pik=0.08, lp_multiple=1.0, T=2.0, r=0.05, rky=0.15, freq=2)
+        },
+        "Class 01 Common Stock": {
+            "params": {"K": 0.0, "thres": 0.0, "vest_pct": 1.0, "is_step": 1},
+            "th_str": "-", 
+            "shares": 10.0, 
+            "fn": call_option(K=0.0, thres=0.0, vest_pct=1.0),
+        }
+    }
+
+def build_simple_pref_common_550() -> dict:
+    return build_simple_preferred_common_only(550.0)
+
+def build_simple_pref_common_250() -> dict:
+    return build_simple_preferred_common_only(250.0)
