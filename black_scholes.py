@@ -1,4 +1,5 @@
 import sys
+import sys
 import time
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Sequence, Tuple, Union
@@ -102,6 +103,39 @@ def call_option(K: float, thres: Union[float, Sequence[float], np.ndarray] = 0.0
     return payoff
 
 
+def preferred_convertible(acc_face: float, conv_price: float, face: float, pik: float, lp_multiple: float,
+                           T: float, r: float, rky: float, freq: int = 2) -> Callable[[np.ndarray], np.ndarray]:
+    """Create non-participating convertible Preferred payoff with regime-dependent discounting.
+    r and rky follow the same annualized, continuously-compounded convention as MarketParams.r
+    r is the rate applied when conversion dominates; rky is the
+    """
+    if freq not in (1, 2, 4, 12):
+        raise ValueError(f"freq must be one of (annual: 1, semi-annual: 2, quarterly: 4, monthly: 12), got {freq}")
+
+    liq_pref = face * (1.0 + pik / freq) ** (freq * T) * lp_multiple
+    rfr_discount = np.exp(-r * T)
+    risky_discount = np.exp(-rky * T)
+    k_conv = liq_pref * conv_price / acc_face  # ST where Conversion == LiqPref
+
+    def payoff(ST: np.ndarray) -> np.ndarray:
+        ST = np.asarray(ST, dtype=float)
+        return np.maximum(acc_face * ST / conv_price, liq_pref)
+
+    def discount_fn(ST: np.ndarray) -> np.ndarray:
+        ST = np.asarray(ST, dtype=float)
+        return np.where(acc_face * ST / conv_price >= liq_pref, rfr_discount, risky_discount)
+
+    payoff.discount_fn = discount_fn
+    payoff.vesting = lambda ST: np.ones_like(np.asarray(ST, dtype=float))  # no vesting schedule
+    payoff.thres = np.array([k_conv])
+    payoff.is_step = 1
+    payoff.is_preferred = True
+    payoff.liq_pref = liq_pref
+    payoff.k_conv = k_conv
+
+    return payoff
+
+
 # Numerical integration helpers
 
 
@@ -173,13 +207,21 @@ def make_mutual_grid(S0: float, T: float, r: float, q: float, sigma: float, N: i
 
 
 def _price_and_delta_on_grid(payoff: Callable, pricing_grid: PricingGrid) -> Tuple[float, float]:
-    """Calculate PV and Delta for one payoff on the shared z-space grid."""
-    payoff_values = payoff(pricing_grid.st_grid)
-    if pricing_grid.z_grid.size == 1:
-        return float(pricing_grid.discount * payoff_values[0]), 0.0
+    """Calculate PV and Delta for one payoff on the shared z-space grid.
 
-    price = pricing_grid.discount * trapezoid(payoff_values * pricing_grid.z_pdf, pricing_grid.z_grid)
-    delta = pricing_grid.discount * trapezoid(payoff_values * pricing_grid.delta_weight, pricing_grid.z_grid)
+    Payoffs may expose a `discount_fn(ST)` attribute for regime-dependent discounting
+    (e.g. convertible Preferred); otherwise the grid's single discount factor is used.
+    """
+    payoff_values = payoff(pricing_grid.st_grid)
+    discount_fn = getattr(payoff, "discount_fn", None)
+    disc = discount_fn(pricing_grid.st_grid) if discount_fn is not None else pricing_grid.discount
+
+    if pricing_grid.z_grid.size == 1:
+        d0 = float(np.atleast_1d(disc)[0])
+        return float(d0 * payoff_values[0]), 0.0
+
+    price = trapezoid(payoff_values * disc * pricing_grid.z_pdf, pricing_grid.z_grid)
+    delta = trapezoid(payoff_values * disc * pricing_grid.delta_weight, pricing_grid.z_grid)
     return float(price), float(delta)
 
 
@@ -200,8 +242,12 @@ def bs_price_and_delta_multiple(
         fwd = S0 * np.exp((r - q) * T_eff)
         disc = np.exp(-r * T_eff)
 
-        p = {k: float(disc * fn(np.array([fwd]))[0]) for k, fn in items}
-        d = {k: float(disc * (fn(np.array([(S0 + eps) * np.exp((r - q) * T_eff)]))[0] - fn(np.array([(S0 - eps) * np.exp((r - q) * T_eff)]))[0]) / (2.0 * eps)) for k, fn in items}
+        def _disc_at(fn: Callable, st: np.ndarray) -> float:
+            discount_fn = getattr(fn, "discount_fn", None)
+            return float(np.atleast_1d(discount_fn(st))[0]) if discount_fn is not None else disc
+
+        p = {k: float(_disc_at(fn, np.array([fwd])) * fn(np.array([fwd]))[0]) for k, fn in items}
+        d = {k: float(_disc_at(fn, np.array([fwd])) * (fn(np.array([(S0 + eps) * np.exp((r - q) * T_eff)]))[0] - fn(np.array([(S0 - eps) * np.exp((r - q) * T_eff)]))[0]) / (2.0 * eps)) for k, fn in items}
 
         return (p if is_dict else list(p.values())), (d if is_dict else list(d.values()))
 
@@ -447,23 +493,31 @@ def calc_portfolio_allocations(prices: Dict[str, float], deltas: Dict[str, float
 # High-level analysis helpers
 
 
+def _find_common_idx(portfolio: dict) -> int:
+    """Locate the Common Stock class index. A leading Preferred class (if present) occupies index 0."""
+    if len(portfolio) == 0:
+        return 0
+    first_fn = portfolio[next(iter(portfolio))]["fn"]
+    return 1 if getattr(first_fn, "is_preferred", False) else 0
+
+
 def _validate_common_stock(portfolio: dict) -> None:
-    """Ensure the first class in the portfolio matches the expected payoff structure for Common Stock."""
+    """Ensure the Common Stock class matches the expected payoff structure."""
     if len(portfolio) == 0:
         return
 
-    first_name = next(iter(portfolio))
-    cm_fn = portfolio[first_name]["fn"]
+    common_name = list(portfolio)[_find_common_idx(portfolio)]
+    cm_fn = portfolio[common_name]["fn"]
     K_val = getattr(cm_fn, "K", -1.0)
     thres_val = getattr(cm_fn, "thres", np.array([-1.0]))
     vest_val = getattr(cm_fn, "vest_pct", np.array([-1.0]))
 
     if K_val != 0.0 or not np.array_equal(thres_val, [0.0]) or not np.array_equal(vest_val, [1.0]):
         raise ValueError(
-            f"Validation Error: The first portfolio class (Index 0) MUST be the Common Stock. "
+            f"Validation Error: The Common Stock class MUST match the expected payoff structure. "
             f"Expected: Strike K=0.0, thres=0.0, vest_pct=1.0 (100%). "
             f"Got: K={K_val}, thres={thres_val.tolist()}, vest_pct={vest_val.tolist()} "
-            f"for class '{first_name}'."
+            f"for class '{common_name}'."
         )
 
 
@@ -472,6 +526,7 @@ def _run_calibration(portfolio: dict, payoffs: Dict[str, Callable], shares: Dict
     t_cal = time.perf_counter()
 
     total_shares = sum(shares.values())
+    cm_idx = _find_common_idx(portfolio)
 
     # Gross-up initial guess: add option proceeds back to TEV then divide by total shares.
     total_proceeds = sum(sh * portfolio[key]["params"].get("K", 0.0) for key, sh in shares.items())
@@ -480,11 +535,11 @@ def _run_calibration(portfolio: dict, payoffs: Dict[str, Callable], shares: Dict
     user_input_s0 = params.S0
 
     cal = calibrate_cca(payoffs, shares, s0_target=targets.s0, voleq_target=targets.voleq, tev0_target=targets.tev0,
-                        r=params.r, T=params.T, q=params.q, N=params.N, s0_guess=guess)
+                        r=params.r, T=params.T, q=params.q, N=params.N, s0_guess=guess, cm_idx=cm_idx)
 
     if targets.s0 <= 0.0 and not cal["status"]:
         cal = calibrate_cca(payoffs, shares, s0_target=targets.s0, voleq_target=targets.voleq, tev0_target=targets.tev0,
-                            r=params.r, T=params.T, q=params.q, N=params.N, s0_guess=user_input_s0)
+                            r=params.r, T=params.T, q=params.q, N=params.N, s0_guess=user_input_s0, cm_idx=cm_idx)
 
     params.S0 = cal["asset_s0"]
     params.sigma = cal["volcm"]
@@ -585,7 +640,7 @@ def run_opm_analysis(portfolio: dict, params: MarketParams = None, targets: Cali
     rows, total_vested = _build_report_rows(portfolio, prices, deltas, shares, total_shares, allocations, pricing_grid)
     total_omega, total_shares_pct = sum(r[9] for r in rows), sum(r[5] for r in rows)
 
-    first_name = next(iter(portfolio))
+    first_name = list(portfolio)[_find_common_idx(portfolio)]
     common_fv = prices[first_name]
     common_shares = portfolio[first_name]["shares"]
     tev_elasticity = 0.0 if total_value <= TOL else S0 * total_delta / total_value
@@ -632,4 +687,3 @@ def run_opm_analysis(portfolio: dict, params: MarketParams = None, targets: Cali
 
     return _format_report(summary_str, per_share_str, diag_str, rows, total_shares, total_shares_pct,
                           total_vested, total_omega, model_eq_vol, total_value, calibration_str, warning_str)
-
